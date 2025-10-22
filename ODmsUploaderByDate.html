@@ -1,0 +1,89 @@
+<template>
+    <lightning-card title="Push Files to DMS by Date Range - HL Collections" class="small-input">
+        <div class="slds-p-around_medium">
+            <lightning-input
+                type="date"
+                label="Start Date"
+                class="small-input"
+                value={dmsStartDate}
+                onchange={handleStartDateChange}>
+            </lightning-input>
+
+            <lightning-input
+                type="date"
+                label="End Date"
+                class="small-input"
+                value={dmsEndDate}
+                onchange={handleEndDateChange}>
+            </lightning-input>
+
+            <lightning-combobox
+                name="objectType"
+                label="Select Object Type"
+                class="small-input"
+                value={dmsSObjectType}
+                options={sObjectOptions}
+                onchange={handleObjectChange}>
+            </lightning-combobox>
+
+            <lightning-button
+                label="Start Upload"
+                variant="brand"
+                onclick={startUpload}
+                class="slds-m-top_medium">
+            </lightning-button>
+
+            <template if:true={dmsShowSpinner}>
+                <lightning-spinner size="medium"></lightning-spinner>
+            </template>
+
+            <template if:true={dmsMessage}>
+                <p class="slds-text-color_success slds-m-top_medium">{dmsMessage}</p>
+            </template>
+        </div>
+    </lightning-card>
+
+    <lightning-card title="Push sObject as JSON" class="small-input">
+        <div class="slds-p-around_medium">
+            <lightning-input
+                type="date"
+                label="Start Date"
+                class="small-input"
+                value={jsonStartDate}
+                onchange={handlesObjStartDateChange}>
+            </lightning-input>
+
+            <lightning-input
+                type="date"
+                label="End Date"
+                class="small-input"
+                value={jsonEndDate}
+                onchange={handlesObjEndDateChange}>
+            </lightning-input>
+
+            <lightning-combobox
+                name="objectType"
+                label="Select Object Type"
+                class="small-input"
+                value={jsonSObjectType}
+                options={sObjectExpOptions}
+                onchange={handlesExpObject}>
+            </lightning-combobox>
+
+            <lightning-button
+                label="Start Export"
+                variant="brand"
+                onclick={sObjstartUpload}
+                class="slds-m-top_medium">
+            </lightning-button>
+
+            <template if:true={jsonShowSpinner}>
+                <lightning-spinner size="medium"></lightning-spinner>
+            </template>
+
+            <template if:true={jsonMessage}>
+                <p class="slds-text-color_success slds-m-top_medium">{jsonMessage}</p>
+            </template>
+        </div>
+    </lightning-card>
+</template>
