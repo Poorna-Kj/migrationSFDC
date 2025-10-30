@@ -50,10 +50,50 @@ public class ODMSBatchControllerTest {
         exceptionThrown = true;
         System.debug('Caught generic exception: ' + e);
     }
-
     System.assert(exceptionThrown, 'Expected an exception to be thrown for blank sObjectType');
 }
  
+     @IsTest
+	static void testStartUploadBetweenDates_BlankStartDate() {
+    DateTime startDate;
+    DateTime endDate = System.now().addDays(1);
+    String sObjectType = '';
+
+    Boolean exceptionThrown = false;
+
+    try {
+        ODMSBatchController.startUploadBetweenDates(startDate, endDate, sObjectType);
+        System.assert(false, 'Expected AuraHandledException due to blank sObjectType');
+    } catch (AuraHandledException e) {
+        exceptionThrown = true;
+        System.debug('Caught AuraHandledException as expected: ' + e);
+    } catch (Exception e) {
+        exceptionThrown = true;
+        System.debug('Caught generic exception: ' + e);
+    }
+    System.assert(exceptionThrown, 'Expected an exception to be thrown for blank sObjectType');
+}
+    
+       @IsTest
+	static void testStartUploadBetweenDates_GreaterEndDate() {
+    DateTime startDate = System.now();
+    DateTime endDate = System.now().addDays(-1);
+    String sObjectType = '';
+
+    Boolean exceptionThrown = false;
+
+    try {
+        ODMSBatchController.startUploadBetweenDates(startDate, endDate, sObjectType);
+        System.assert(false, 'Expected AuraHandledException due to blank sObjectType');
+    } catch (AuraHandledException e) {
+        exceptionThrown = true;
+        System.debug('Caught AuraHandledException as expected: ' + e);
+    } catch (Exception e) {
+        exceptionThrown = true;
+        System.debug('Caught generic exception: ' + e);
+    }
+    System.assert(exceptionThrown, 'Expected an exception to be thrown for blank sObjectType');
+}
 
     @IsTest
     static void testGetBatchJobStatus() {
@@ -68,13 +108,19 @@ public class ODMSBatchControllerTest {
         Test.startTest();
         String jobId = ODMSBatchController.startUploadBetweenDates(startDate, endDate, sObjectType);
        
-        String status = ODMSBatchController.getBatchJobStatus(jobId);
-        Test.stopTest();
+        ODMSBatchController.BatchJobStatusWrapper statusWrapper = ODMSBatchController.getBatchJobStatus(jobId);
 
+        String status = statusWrapper.Status;
+        System.debug('job Status : '+status);
+        Test.stopTest();
+		
         System.assertNotEquals(null, status, 'Batch job status should not be null');
         System.assert(
             status == 'Queued' || status == 'Processing' || status == 'Completed',
             'Status should be Queued, Processing or Completed'
         );
     }
+    
+   
+ 
 }
