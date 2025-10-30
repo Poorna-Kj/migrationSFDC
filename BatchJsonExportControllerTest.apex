@@ -71,9 +71,6 @@ static void setupTestData() {
             EndDate__c = endDate
         );
         insert result;
-
-        // Test getBatchJobStatus
-        // Since we can't control actual AsyncApexJob status, wrap in try-catch
         try {
             String status = BatchJsonExportController.getBatchJobStatus(jobId);
             System.debug('Batch status: ' + status); // For visibility
@@ -83,20 +80,18 @@ static void setupTestData() {
 
         // Test getBatchJsonResult
         String jsonResult = BatchJsonExportController.getBatchJsonResult(jobId);
-      //  System.assertEquals('[{"Name":"Dynamic"}]', jsonResult);
-
         try {
             String download = BatchJsonExportController.downloadJson(jobId);
-            //System.assert(false, 'Expected AuraHandledException for missing cache');
         } catch (AuraHandledException ex) {
             System.assertEquals('JSON not ready yet.', ex.getMessage());
         }
     }
 
     @isTest
-    static void testGetBatchJsonResult_FailsIfNotCompleted() {
+    static void testGetBatchJsonResult() {
         Test.startTest();
-Id jobId = Database.executeBatch(new ExportSObjectBatch('OReceipt__c', Date.today().addDays(-1), Date.today()), 5);
+      
+            Id jobId = Database.executeBatch(new ExportSObjectBatch('OReceipt__c', Date.today().addDays(-1), Date.today()), 5);
 Test.stopTest();
         // Insert Export_Result__c with a different status
         Export_Result__c result = new Export_Result__c(
@@ -108,13 +103,119 @@ Test.stopTest();
             EndDate__c = Date.today()
         );
         insert result;
+        try {
+            String json = BatchJsonExportController.getBatchJsonResult(result.Job_Id__c);
+        } catch (AuraHandledException ex) {
+           System.debug('Exception : '+ex.getMessage());
+        }  
+    }
+   
+    //OContactRecording__c
+    @isTest
+    static void testGetBatchJsonResult_ContactRec() {
+        Test.startTest();
+        String sObjectName = 'OContactRecording__c';
+        if(sObjectName=='OContactRecording__c')
+        {
+            Id jobId = Database.executeBatch(new ExportSObjectBatch('OContactRecording__c', Date.today().addDays(-1), Date.today()), 5);
+Test.stopTest();
+        Export_Result__c result = new Export_Result__c(
+            Job_Id__c = jobId,
+            Status__c = 'In Progress',
+            JsonData__c = '',
+            ObjectName__c = 'OContactRecording__c',
+            StartDate__c = Date.today().addDays(-2),
+            EndDate__c = Date.today()
+        );
+        insert result;
+            try {
+            String json = BatchJsonExportController.getBatchJsonResult(result.Job_Id__c);
+        } catch (AuraHandledException ex) {
+           System.debug('Exception : '+ex.getMessage());
+        }
+        }
+        
+    } 
+        // === Test for OApprovalRequest__c ===
+    @isTest
+    static void testGetBatchJsonResult_ApprovalRequest() {
+        Test.startTest();
+        Id jobId = Database.executeBatch(
+            new ExportSObjectBatch('OApprovalRequest__c', Date.today().addDays(-1), Date.today()), 
+            5
+        );
+        Test.stopTest();
+
+        // Insert Export_Result__c with dummy data
+        Export_Result__c result = new Export_Result__c(
+            Job_Id__c = jobId,
+            Status__c = 'In Progress',
+            JsonData__c = '',
+            ObjectName__c = 'OApprovalRequest__c',
+            StartDate__c = Date.today().addDays(-1),
+            EndDate__c = Date.today()
+        );
+        insert result;
 
         try {
             String json = BatchJsonExportController.getBatchJsonResult(result.Job_Id__c);
-           // System.assert(false, 'Expected AuraHandledException due to incomplete status');
         } catch (AuraHandledException ex) {
-           // System.assertEquals('Export not completed yet or failed.', ex.getMessage());
-           System.debug('Exception : '+ex.getMessage());
+            System.debug('OApprovalRequest__c branch covered - Exception: ' + ex.getMessage());
         }
     }
+
+    // === Test for OChallan__c ===
+    @isTest
+    static void testGetBatchJsonResult_Challan() {
+        Test.startTest();
+        Id jobId = Database.executeBatch(
+            new ExportSObjectBatch('OChallan__c', Date.today().addDays(-1), Date.today()), 
+            5
+        );
+        Test.stopTest();
+
+        Export_Result__c result = new Export_Result__c(
+            Job_Id__c = jobId,
+            Status__c = 'In Progress',
+            JsonData__c = '',
+            ObjectName__c = 'OChallan__c',
+            StartDate__c = Date.today().addDays(-1),
+            EndDate__c = Date.today()
+        );
+        insert result;
+
+        try {
+            String json = BatchJsonExportController.getBatchJsonResult(result.Job_Id__c);
+        } catch (AuraHandledException ex) {
+            System.debug('OChallan__c branch covered - Exception: ' + ex.getMessage());
+        }
+    }
+
+    // === Test for OReceiptBatch__c ===
+    @isTest
+    static void testGetBatchJsonResult_ReceiptBatch() {
+        Test.startTest();
+        Id jobId = Database.executeBatch(
+            new ExportSObjectBatch('OReceiptBatch__c', Date.today().addDays(-1), Date.today()), 
+            5
+        );
+        Test.stopTest();
+
+        Export_Result__c result = new Export_Result__c(
+            Job_Id__c = jobId,
+            Status__c = 'In Progress',
+            JsonData__c = '',
+            ObjectName__c = 'OReceiptBatch__c',
+            StartDate__c = Date.today().addDays(-1),
+            EndDate__c = Date.today()
+        );
+        insert result;
+
+        try {
+            String json = BatchJsonExportController.getBatchJsonResult(result.Job_Id__c);
+        } catch (AuraHandledException ex) {
+            System.debug('OReceiptBatch__c branch covered - Exception: ' + ex.getMessage());
+        }
+    }
+
 }
