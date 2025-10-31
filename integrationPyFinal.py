@@ -1,9 +1,14 @@
+
+# #To run the job every two hours - 0 */2 * * * /usr/bin/python3 /path/to/integration.py >> /path/to/integration.log 2>&1
+
+
 import os
 from datetime import datetime, timezone
 from pymongo import MongoClient, UpdateOne
 from simple_salesforce import Salesforce
 from dotenv import load_dotenv
 from collections import defaultdict
+from simple_salesforce.exceptions import SalesforceMalformedRequest
 
 # -----------------------------------
 # Load Environment Variables
@@ -25,11 +30,14 @@ sf = Salesforce(
     security_token=SF_SECURITY_TOKEN,
     domain=SF_DOMAIN
 )
+print("✅ Connected to Salesforce")
 
 mongo_client = MongoClient(MONGO_CONN_STR)
 db = mongo_client.get_database()
-checkpoint_coll = db["_sync_metadata"]
-print(checkpoint_coll)
+
+checkpoint_coll = db["_sync_metadata"]      # To track last sync timestamps
+error_coll = db["_sync_errors"]             # To store error logs
+
 # -----------------------------------
 # Salesforce Object Configurations
 # -----------------------------------
@@ -40,7 +48,7 @@ OBJECT_QUERIES = {
                SystemModstamp
         FROM OContactRecording__c 
     """,
-    "OReceipt__c": """
+     "OReceipt__c": """
         SELECT Id, Name, AgreementId__c, AgreementNo__c,
                Amount__c, CreatedDate, SystemModstamp
         FROM OReceipt__c
@@ -65,7 +73,7 @@ OBJECT_QUERIES = {
                BatchId__c, ChargeAmount__c, Receipt__c,
                SystemModstamp
         FROM OCollectionPayment__c
-    """,
+    """
 }
 
 # -----------------------------------
@@ -91,6 +99,22 @@ def update_checkpoint(sobject_name, newest_time):
     )
 
 
+def log_error(sobject_name, record_id, stage, message, record_data=None):
+    """Store detailed error logs in MongoDB."""
+    error_doc = {
+        "sobject_name": sobject_name,
+        "record_id": record_id,
+        "error_stage": stage,
+        "error_message": str(message),
+        "record_data": record_data or {},
+        "timestamp": datetime.now(timezone.utc)
+    }
+    try:
+        error_coll.insert_one(error_doc)
+        print(f"⚠️ Logged error for {sobject_name} ({record_id}) at {stage}")
+    except Exception as e:
+        print(f"❌ Failed to write error log to MongoDB: {e}")
+
 # -----------------------------------
 # Core Sync Function
 # -----------------------------------
@@ -107,20 +131,21 @@ def sync_salesforce_object(sobject_name, base_query):
     try:
         result = sf.query_all(soql)
         records = result["records"]
-        print(f"Fetched {len(records)} records from {sobject_name}")
+        print(f"📦 Fetched {len(records)} records from {sobject_name}")
     except Exception as e:
+        log_error(sobject_name, None, "Salesforce Query", e)
         print(f"❌ Failed to fetch records for {sobject_name}: {e}")
         return
 
     if not records:
-        print("No new or updated records found.")
+        print(f"No new or updated records found for {sobject_name}.")
         return
 
     # Group by sObject_Record_Id__c (push all related records into one collection)
     grouped_records = defaultdict(list)
     for rec in records:
         rec.pop("attributes", None)
-        group_id = rec.get("sObject_Record_Id__c") or "default"
+        group_id = rec.get("sObject_Record_Id__c") or "Collections"
         coll_name = f"{sobject_name}_{group_id}".replace(".", "_")
         grouped_records[coll_name].append(rec)
 
@@ -135,11 +160,14 @@ def sync_salesforce_object(sobject_name, base_query):
             UpdateOne({"Id": d["Id"]}, {"$set": d}, upsert=True)
             for d in docs
         ]
-        if ops:
+        try:
             result = collection.bulk_write(ops, ordered=False)
             count = (result.upserted_count or 0) + (result.modified_count or 0)
             total_upserts += count
-            print(f"✅ {coll_name}: {count} upserts")
+            print(f"✅ {coll_name}: {count} records upserted in MongoDB")
+        except Exception as e:
+            for d in docs:
+                log_error(sobject_name, d.get("Id"), "Mongo Upsert", e, d)
 
         # Track latest SystemModstamp
         latest_doc = max(d["SystemModstamp"] for d in docs if "SystemModstamp" in d)
@@ -150,17 +178,16 @@ def sync_salesforce_object(sobject_name, base_query):
     if newest_modstamp:
         update_checkpoint(sobject_name, newest_modstamp)
 
-    print(f"🔹 {sobject_name}: {total_upserts} records upserted.")
-
+    print(f"🔹 {sobject_name}: {total_upserts} records successfully processed.")
 
 # -----------------------------------
-# Run Sync for All Objects
+# Main Execution
 # -----------------------------------
 if __name__ == "__main__":
     for obj_name, soql in OBJECT_QUERIES.items():
         try:
             sync_salesforce_object(obj_name, soql)
         except Exception as e:
-            print(f"❌ Error syncing {obj_name}: {e}")
+            log_error(obj_name, None, "Main Sync Loop", e)
 
     print("\n🎯 All Salesforce objects synced successfully!")
