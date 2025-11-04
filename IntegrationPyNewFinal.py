@@ -256,8 +256,6 @@ def sync_salesforce_object(sobject_name, base_query):
 
     print(f" {sobject_name}: {total_upserts} records successfully processed.")
 
-
-
 # -----------------------------------
 # Main Execution
 # -----------------------------------
