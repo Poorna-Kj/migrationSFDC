@@ -240,6 +240,22 @@ def sync_salesforce_object(sobject_name, base_query):
 
         except Exception as e:
             for d in docs:
+                log_error(sobject_name, d.get("Id"), "Mongo Upsert", e, d)
+
+        # Track latest SystemModstamp
+        latest_doc = max(
+            (d.get("SystemModstamp") for d in docs if d.get("SystemModstamp")),
+            default=None
+        )
+        if latest_doc and (newest_modstamp is None or latest_doc > newest_modstamp):
+            newest_modstamp = latest_doc
+
+    # Update checkpoint with last SystemModstamp
+    if newest_modstamp:
+        update_checkpoint(sobject_name, newest_modstamp)
+
+    print(f" {sobject_name}: {total_upserts} records successfully processed.")
+
 
 
 # -----------------------------------
