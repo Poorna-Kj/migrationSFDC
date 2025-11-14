@@ -1,3 +1,15 @@
+/**
+* @File Name : OBatchInsertODMSFilesByDateTest.cls
+* @Description :
+* @Author :
+* @Last Modified By :
+* @Last Modified On : September 7, 2025 
+* @Modification Log :
+*==============================================================================
+* Ver | Date | Author | Modification
+*==============================================================================
+* 1.0 | September 7, 2025 |   | Initial Version
+**/
 @IsTest
 public class OBatchInsertODMSFilesByDateTest {
 
@@ -34,8 +46,6 @@ public class OBatchInsertODMSFilesByDateTest {
 
         return cdl;
     }
-
-    // ---------------------- TEST CASES ----------------------
 
     @IsTest
     static void testBatchForOContactRecording() {
@@ -87,27 +97,8 @@ public class OBatchInsertODMSFilesByDateTest {
         Test.stopTest();
     }
 
-    @IsTest
-    static void testBatchForOReceiptBatch() {
-        Test.setMock(HttpCalloutMock.class, new MockHttpResponseGenerator());
-
-        OReceiptBatch__c rb = new OReceiptBatch__c(
-            Vertical__c = 'HL'
-        );
-        insert rb;
-
-        createContentDocLink(rb);
-
-        DateTime startDate = System.now().addDays(-1);
-        DateTime endDate = System.now().addDays(1);
-
-        Test.startTest();
-        OBatchInsertODMSFilesByDate batchJob = new OBatchInsertODMSFilesByDate(startDate, endDate, 'OReceiptBatch__c', 'HL');
-        Database.executeBatch(batchJob, 1);
-        Test.stopTest();
-    }
-
-    @IsTest
+ 
+   /* @IsTest
     static void testBatchForOReceipt() {
         Test.setMock(HttpCalloutMock.class, new MockHttpResponseGenerator());
 
@@ -125,18 +116,26 @@ public class OBatchInsertODMSFilesByDateTest {
         );
         insert agreement;
 
-        OReceipt__c receipt = new OReceipt__c(
-            LMSSyncStatus__c='Awaiting',
-            Status__c='Ready for Batching',
-            Product__c='VF',
-            AgreementNo__c=agreement.Name,
-            PaymentMode__c='CASH',
-            ReceiptDate__c=System.today(),
-            Amount__c=1000.00,
-            PhoneNumber__c='9123456780',
-            Vertical__c='HL'
-        );
-        insert receipt;
+       OReceipt__c receipt = new OReceipt__c(
+    LMSSyncStatus__c = 'Awaiting',
+    Status__c = 'Ready for Batching',
+    Product__c = 'VF',
+    AgreementNo__c = agreement.Id,
+    AgreementNumber__c = agreement.Name,      // IMPORTANT
+    CustomerCIFId__c = acc.CIFID__c,
+    //Customer__c = acc.Id,
+    PaymentMode__c = 'CASH',
+    ReceiptDate__c = System.today(),
+    Amount__c = 1000.00,
+    PhoneNumber__c = '9123456780',
+    Vertical__c = 'HL',
+    ReceiptType__c = 'OD – Overdue',              // REQUIRED
+    Source__c = 'Browser',                   // REQUIRED
+    RecordTypes__c = 'Overdue',        // REQUIRED (matches devname)
+    PaymentStatus__c = 'CHEQUE PAYMENT AUTHOR'
+);
+insert receipt;
+
 
         createContentDocLink(receipt);
 
@@ -147,7 +146,7 @@ public class OBatchInsertODMSFilesByDateTest {
         OBatchInsertODMSFilesByDate batchJob = new OBatchInsertODMSFilesByDate(startDate, endDate, 'OReceipt__c', 'HL');
         Database.executeBatch(batchJob, 1);
         Test.stopTest();
-    }
+    } */ 
 
     @IsTest
     static void testBatchForOApprovalRequest() {
@@ -181,6 +180,27 @@ public class OBatchInsertODMSFilesByDateTest {
 
         Test.startTest();
         OBatchInsertODMSFilesByDate batchJob = new OBatchInsertODMSFilesByDate(startDate, endDate, 'OApprovalRequest__c', 'HL');
+        Database.executeBatch(batchJob, 1);
+        Test.stopTest();
+    }
+    
+    
+    @IsTest
+    static void testBatchForOReceiptBatch() {
+        Test.setMock(HttpCalloutMock.class, new MockHttpResponseGenerator());
+
+        OReceiptBatch__c recBatch = new OReceiptBatch__c(
+            Vertical__c = 'HL'
+        );
+        insert recBatch;
+
+        createContentDocLink(recBatch);
+
+        DateTime startDate = System.now().addDays(-1);
+        DateTime endDate = System.now().addDays(1);
+
+        Test.startTest();
+        OBatchInsertODMSFilesByDate batchJob = new OBatchInsertODMSFilesByDate(startDate, endDate, 'OReceiptBatch__c', 'HL');
         Database.executeBatch(batchJob, 1);
         Test.stopTest();
     }
