@@ -27,19 +27,6 @@ public with sharing class ExportSObjectBatch implements Database.Batchable<SObje
 
         return Database.getQueryLocator(buildQuery());
     }
-
-    // public void execute(Database.BatchableContext bc, List<SObject> scope) {
-    //    try {
-    //         // Convert only current chunk to JSON
-    //         List<Map<String,Object>> chunkData = new List<Map<String,Object>>();
-    //         for (SObject rec : scope) {
-    //             chunkData.add((Map<String,Object>) JSON.deserializeUntyped(JSON.serialize(rec)));
-    //         }
-    //         jsonChunks.add(JSON.serialize(chunkData));
-    //     } catch (Exception e) {
-    //         System.debug('Error serializing chunk: ' + e.getMessage());
-    //     }
-    // }
     public void execute(Database.BatchableContext bc, List<SObject> scope) {
     try {
         for (SObject rec : scope) {
@@ -49,31 +36,9 @@ public with sharing class ExportSObjectBatch implements Database.Batchable<SObje
         System.debug('Error serializing chunk: ' + e.getMessage());
     }
 }
-
-    // public void finish(Database.BatchableContext bc) {
-    //     try {
-    //         String jsonData = JSON.serialize(accumulatedData);
-
-    //         Export_Result__c res = [
-    //             SELECT Id FROM Export_Result__c WHERE Id = :resultRecordId LIMIT 1
-    //         ];
-    //        // res.JsonData__c = jsonData;
-    //         res.Status__c = 'Completed';
-    //         update res;
-    //     } catch (Exception e) {
-    //         Export_Result__c res = [
-    //             SELECT Id FROM Export_Result__c WHERE Id = :resultRecordId LIMIT 1
-    //         ];
-    //         res.Status__c = 'Failed: ' + e.getMessage();
-    //         update res;
-    //     }
-    // }
     public void finish(Database.BatchableContext bc) {
     try {
         String jsonData = JSON.serialize(accumulatedData);
-
-        // Store in session cache with job ID as key
-       // Cache.Session.put(bc.getJobId(), jsonData);
         Cache.Org.put(bc.getJobId(), jsonData);
 
         Export_Result__c res = [
@@ -111,15 +76,29 @@ public with sharing class ExportSObjectBatch implements Database.Batchable<SObje
 
                    'Agreement__r.Status__c, Agreement__r.NPASTAGE__c, ' +
 
-                   'LastModifiedBy.Name,' +
+                   'LastModifiedBy.Name,Vertical__c,' +
 
                    'Question1__c, Response1__c, Question2__c, Response2__c, ' +
 
                    'Question3__c, Response3__c, Question4__c, Response4__c, ' +
 
-                   'Question5__c, Response5__c ' +
+                   'Question5__c, Response5__c, ' +
+                   'Question6__c, Response6__c, ' +
+            'Question7__c, Response7__c, Question8__c, Response8__c, Question9__c, Response9__c, ' +
+            'Question10__c, Response10__c, Question11__c, Response11__c, Question12__c, Response12__c, ' +
+            'Question13__c, Response13__c, Question14__c, Response14__c, Question15__c, Response15__c, ' +
+            'Question16__c, Response16__c, Question17__c, Response17__c, Question18__c, Response18__c, ' +
+            'Question19__c, Response19__c, Question20__c, Response20__c, Question21__c, Response21__c, ' +
+            'Question22__c, Response22__c, Question23__c, Response23__c, Question24__c, Response24__c, ' +
+            'Question25__c, Response25__c, Question26__c, Response26__c, Question27__c, Response27__c, ' +
+            'Question28__c, Response28__c, Question29__c, Response29__c, Question30__c, Response30__c, ' +
+            'Question31__c, Response31__c, Question32__c, Response32__c, Question33__c, Response33__c, ' +
+            'Question34__c, Response34__c, Question35__c, Response35__c, Question36__c, Response36__c, ' +
+            'Question37__c, Response37__c, Question38__c, Response38__c, Question39__c, Response39__c, ' +
+            'Question40__c, Response40__c, Question41__c, Response41__c, Question42__c, Response42__c, ' +
+            'Question43__c, Response43__c, Question44__c, Response44__c, Question45__c, Response45__c ' +
 
-                   'FROM ' + sObjectType +
+                   ' FROM ' + sObjectType +
 
                    ' WHERE Agreement__r.Status__c = \'Closed\' ' +
 
@@ -151,9 +130,9 @@ public with sharing class ExportSObjectBatch implements Database.Batchable<SObje
 
                 'IFSCCode__c, CustomerCIFId__c, OwnerDesignation__c, OwnerBranch__c, Description__c, ' +
 
-                'DraftAmount__c, LMSChequeNo__c, LMSPaymentMode__c, CreatedDate ' +
+                'DraftAmount__c, LMSChequeNo__c, LMSPaymentMode__c, CreatedDate ,Vertical__c' +
 
-                'FROM ' + sObjectType +
+                ' FROM ' + sObjectType +
 
                 ' WHERE CreatedDate >= :startDate AND CreatedDate <= :endDate';
 
@@ -193,7 +172,7 @@ public with sharing class ExportSObjectBatch implements Database.Batchable<SObje
 
                 'ReceiptBranch__c, Total_Charge_Due__c, Total_Charge_Waiver__c, Vertical__c ' +
 
-                'FROM ' + sObjectType +
+                ' FROM ' + sObjectType +
 
                 ' WHERE CreatedDate >= :startDate AND CreatedDate <= :endDate';
 
@@ -221,7 +200,7 @@ public with sharing class ExportSObjectBatch implements Database.Batchable<SObje
 
                 'TotalNumberofDaysDelayed__c, Type__c, UserGroupName__c, Vertical__c ' +
 
-                'FROM ' + sObjectType +
+                ' FROM ' + sObjectType +
 
                 ' WHERE CreatedDate >= :startDate AND CreatedDate <= :endDate ' ;
 
@@ -241,10 +220,26 @@ public with sharing class ExportSObjectBatch implements Database.Batchable<SObje
 
         'UserBranch__c, UserBranch__r.BatchId__c, UserGroupName__c, Vertical__c ' +
 
-        'FROM ' + sObjectType +
+        ' FROM ' + sObjectType +
 
         ' WHERE CreatedDate >= :startDate AND CreatedDate <= :endDate';
 
+}
+else if (sObjectType == 'OCollectionPayment__c') {
+
+    query = 'SELECT Id, Name, AdviceAmount__c, AgreementNo__c, BatchId__c, ChargeAmount__c, ' +
+            'ChargeId__c, ChargeName__c, ChargeTaxMaster__c, Cheque_Upload_Deadline_in_Days__c, ' +
+            'ChequeId__c, ClosedAgreementNo__c, CollectionExternalKey__c, CollectionType__c, ' +
+            'ExtractionDate__c, Included_for_Batching__c, Max_Amount_Allowed_in_Cash_Mode__c, ' +
+            'Max_Amount_CFE_Can_Carry__c, Max_Amount_Payable_for_Non_Agreement__c, ' +
+            'Max_No_of_Batches_Open_Per_CFE__c, Max_No_of_Cash_Receipts_Open_per_CFE__c, ' +
+            'Max_No_of_Cash_Receipts_Un_Batched__c, Max_No_of_Days_Cheque_Can_Be_Backdated__c, ' +
+            'Max_No_of_Days_POS_Can_Be_Backdated__c, Max_No_Of_Days_UnChallaned_Cash_Receipt__c, ' +
+            'Max_No_of_Un_Challaned_Batches_Per_User__c, Max_Shortfall_Amount_per_Agreement__c, ' +
+            'Min_Amount_For_PAN_Verification__c, Payment_Mode_Lap__c, PaymentId__c, Receipt__c, ' +
+            'RelatedReceipts__c, Vertical__c, WaiverAmount__c, LastModifiedDate, LastActivityDate,CreatedDate ' +
+            ' FROM ' + sObjectType +
+            ' WHERE CreatedDate >= :startDate AND CreatedDate <= :endDate';
 }
 
         return query;
