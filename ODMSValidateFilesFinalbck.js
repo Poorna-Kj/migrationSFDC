@@ -14,7 +14,7 @@
 public with sharing class ODMSValidateFiles {
 
  public static final Set<String> ALLOWED_OBJECTS = new Set<String>{'OReceipt__c', 'OChallan__c', 'OApprovalRequest__c', 'OContactRecording__c','OReceiptBatch__c' };
- public static final Integer MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 6MB limit
+ public static final Integer MAX_FILE_SIZE_BYTES = 12 * 1024 * 1024; // 12MB limit
 
     public class DocumentFileWrapper {
         public Id contentDocumentId;
@@ -28,6 +28,7 @@ public with sharing class ODMSValidateFiles {
         public String parentRecordName;
         public Long fileSize;
         public Blob contentVersion;
+        public String ownerName;
 
       public DocumentFileWrapper(ContentDocumentLink cdl) {
     this.contentDocumentId = cdl.ContentDocumentId;
@@ -39,10 +40,10 @@ public with sharing class ODMSValidateFiles {
     this.parentObjectType = cdl.LinkedEntityId.getSObjectType().getDescribe().getName();
     this.parentRecordName = cdl.LinkedEntity.Name;
     this.contentVersion = cdl.ContentDocument.LatestPublishedVersion.VersionData;
-          
+    this.ownerName = cdl.ContentDocument.LatestPublishedVersion.CreatedBy.Name;      
 
     ContentVersion cvMeta = [
-                SELECT ContentSize, Id,ContentBodyId,VersionData
+                SELECT ContentSize, Id,ContentBodyId,VersionData,Owner.Name
                 FROM ContentVersion
                 WHERE Id = :cdl.ContentDocument.LatestPublishedVersion.Id
                 LIMIT 1
@@ -153,7 +154,13 @@ public static void uploadSingleFile(ContentDocumentLink cdl) {
                 System.debug('No Vertical__c found for ' + sObjectType + ': ' + ex.getMessage());
                 verticalValue = null;
             }
-
+            ContentVersion cv = [
+                                SELECT OwnerId, Owner.Name
+                                FROM ContentVersion
+                                WHERE ContentDocumentId = :cdl.ContentDocumentId
+                                AND IsLatest = true
+                                LIMIT 1
+                            ];
             insert new ODMS_File__c (
                 ContentDocumentId__c = cdl.ContentDocumentId,
                 Document_Name__c = fileName,
@@ -165,7 +172,8 @@ public static void uploadSingleFile(ContentDocumentLink cdl) {
                 sObject_Record_Id__c = cdl.LinkedEntityId,
                 IsUploadedToDMS__c =true,
                 IsUploaded__c =true,
-                Vertical__c = verticalValue
+                Vertical__c = verticalValue,
+                Content_File_Owner__c = cv.Owner.Name
             );
         }
     } catch (Exception e) {
