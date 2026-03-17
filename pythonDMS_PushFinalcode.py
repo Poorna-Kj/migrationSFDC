@@ -1,30 +1,87 @@
 import os
-import mimetypes
-import requests
 import json
 import hashlib
+import mimetypes
+import requests
 from datetime import datetime, timezone
-from simple_salesforce import Salesforce
+
 from dotenv import load_dotenv
+from simple_salesforce import Salesforce
 from pymongo import MongoClient, ASCENDING
 
-# ================= ENV =================
+# ---------------- LOAD ENV ----------------
+
 load_dotenv()
+
+# ---------------- CONFIG ----------------
 
 SF_USERNAME = os.getenv("SF_USERNAME")
 SF_PASSWORD = os.getenv("SF_PASSWORD")
-SF_TOKEN    = os.getenv("SF_SECURITY_TOKEN")
-SF_DOMAIN   = os.getenv("SF_DOMAIN", "test")
+SF_TOKEN = os.getenv("SF_SECURITY_TOKEN")
+SF_DOMAIN = os.getenv("SF_DOMAIN")
 
-DMS_URL     = os.getenv("DMS_ENDPOINT")
-DMS_AUTH    = os.getenv("DMS_AUTH_HEADER")
+DMS_URL = os.getenv("DMS_ENDPOINT")
+DMS_AUTH = os.getenv("DMS_AUTH_HEADER")
 
-MONGO_URI   = os.getenv("MONGO_URI")
+MONGO_URI = os.getenv("MONGO_CONNECTION_STRING")
 
+DOWNLOAD_DIR = "large_files"
 MAX_SIZE = 6 * 1024 * 1024  # 6 MB
 
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
 
-# ================= SALESFORCE LOGIN =================
+# ---------------- DMS WRAPPER ----------------
+
+class DMSRequestWrapper:
+
+    @staticmethod
+    def create_upload_request(r, doc_id, size, checksum, vertical, agreement_no, file_ext, filename):
+
+        created_date = datetime.strptime(
+            r["CreatedDate"][:10], "%Y-%m-%d"
+        ).strftime("%d/%m/%Y")
+
+        return {
+            "imageId": doc_id,
+            "uniqueId": r["Id"],
+            "sourceSys": "Gallop",
+
+            "branchCode": "1208",
+            "branch": "HO",
+
+            "vertical": vertical if vertical else "Unknown",
+
+            "stage": "FI",
+            "module": "Notice Letters",
+
+            "imageCategory": "0",
+            "imageSubCategory": "0",
+
+            "status": "1",
+
+            "fileName": filename,
+
+            "latLong": "242-12344",
+            "imageSrc": "Gallop",
+            "imageSrcId": "01",
+
+            "format": (file_ext or "").lower(),
+
+            "user": r["CreatedBy"]["Name"],
+            "size": str(size),
+
+            "createdBy": r["CreatedBy"]["Name"],
+            "createdDate": created_date,
+
+            "checkSum": checksum,
+
+            "keyId": ["agreementNo"],
+            "keyValue": [agreement_no or "UNKNOWN"]
+        }
+
+# ---------------- LOGIN ----------------
+
 def sf_login():
     sf = Salesforce(
         username=SF_USERNAME,
@@ -32,246 +89,255 @@ def sf_login():
         security_token=SF_TOKEN,
         domain=SF_DOMAIN
     )
-    print("LOGIN OK ✅", sf.sf_instance)
+    print("✅ Salesforce Login Successful:", sf.sf_instance)
     return sf
 
+# ---------------- MONGO ----------------
 
-# ================= SHA1 CHECKSUM =================
-def generate_sha1(file_bytes):
+def mongo_connect():
+    client = MongoClient(MONGO_URI)
+    db = client["DMS_TRACKING_DB"]
+    collection = db["DMS_FILE_METADATA"]
+
+    collection.create_index(
+        [("ContentDocumentId__c", ASCENDING)],
+        unique=True
+    )
+
+    print("✅ MongoDB Connected")
+    return collection
+
+# ---------------- SHA1 ----------------
+
+def generate_sha1(file_path):
+
     sha1 = hashlib.sha1()
-    sha1.update(file_bytes)
+
+    with open(file_path, "rb") as f:
+        while chunk := f.read(8192):
+            sha1.update(chunk)
+
     return sha1.hexdigest()
 
+# ---------------- HELPERS ----------------
 
-# ================= MONGO SETUP =================
-# mongo_client = MongoClient(MONGO_URI)
-# db = mongo_client["SalesforceExports"]
-# collection = db["file_tracking"]
-MONGO_URI = os.getenv("MONGO_CONNECTION_STRING")
-MONGO_DB = os.getenv("MONGO_DB_NAME")
-MONGO_COLLECTION = os.getenv("MONGO_COLLECTION_NAME")
-print("DB",MONGO_DB)
-print("Collection",MONGO_COLLECTION)
+def build_filename(title, ext):
+    if not ext:
+        return title
+    if title.lower().endswith(f".{ext.lower()}"):
+        return title
+    return f"{title}.{ext}"
 
-mongo_client = MongoClient(MONGO_URI)
-# test connection
-mongo_client.admin.command('ping')
-print("MongoDB Ping Successful ✅")
-db = mongo_client[MONGO_DB]
-collection = db[MONGO_COLLECTION]
+# ---------------- SALESFORCE HELPERS ----------------
 
-collection.create_index(
-    [("ContentDocumentId__c", ASCENDING)],
-    unique=True
-)
+def get_linked_entity(sf, doc_id):
 
-print(f"MongoDB Connected → {MONGO_DB}.{MONGO_COLLECTION} ✅")
+    query = f"""
+    SELECT LinkedEntityId, LinkedEntity.Type
+    FROM ContentDocumentLink
+    WHERE ContentDocumentId = '{doc_id}'
+    LIMIT 1
+    """
 
-# ================= MAIN =================
+    res = sf.query(query)
+
+    if res["records"]:
+        rec = res["records"][0]
+        return rec["LinkedEntityId"], rec["LinkedEntity"]["Type"]
+
+    return None, None
+
+
+def get_vertical(sf, record_id, obj):
+
+    if not record_id or not obj:
+        return None
+
+    try:
+        query = f"""
+        SELECT Vertical__c
+        FROM {obj}
+        WHERE Id = '{record_id}'
+        LIMIT 1
+        """
+        res = sf.query(query)
+
+        if res["records"]:
+            return res["records"][0].get("Vertical__c")
+
+    except Exception as e:
+        print("❌ Vertical fetch failed:", str(e))
+
+    return None
+
+
+def get_agreement_number(sf, record_id, obj):
+
+    if not record_id or not obj:
+        return "UNKNOWN"
+
+    try:
+        query = f"""
+        SELECT Agreement_No__c
+        FROM {obj}
+        WHERE Id = '{record_id}'
+        LIMIT 1
+        """
+        res = sf.query(query)
+
+        if res["records"]:
+            return res["records"][0].get("Agreement_No__c") or "UNKNOWN"
+
+    except Exception as e:
+        print("❌ Agreement fetch failed:", str(e))
+
+    return "UNKNOWN"
+
+# ---------------- DOWNLOAD ----------------
+
+def download_file(sf, cv_id, filename):
+
+    url = f"{sf.base_url}sobjects/ContentVersion/{cv_id}/VersionData"
+
+    headers = {
+        "Authorization": f"Bearer {sf.session_id}"
+    }
+
+    path = os.path.join(DOWNLOAD_DIR, filename)
+
+    with requests.get(url, headers=headers, stream=True) as r:
+        r.raise_for_status()
+        with open(path, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+
+    print("📥 Downloaded:", filename)
+    return path
+
+# ---------------- DMS UPLOAD ----------------
+
+def upload_to_dms(file_path, metadata):
+
+    filename = os.path.basename(file_path)
+
+    mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    print("\n🚀 Uploading:", filename)
+    print("📦 Payload:", json.dumps(metadata, indent=2))
+
+    files = {
+        "data": (None, json.dumps(metadata), "application/json"),
+        "image": (filename, open(file_path, "rb"), mime)
+    }
+
+    headers = {
+        "Authorization": DMS_AUTH
+    }
+
+    response = requests.post(
+        DMS_URL,
+        headers=headers,
+        files=files,
+        timeout=600
+    )
+
+    print("🔹 Status:", response.status_code)
+
+    try:
+        print("🔹 JSON:", json.dumps(response.json(), indent=2))
+    except:
+        print("🔹 Raw:", response.text)
+
+    return response
+
+# ---------------- MAIN ----------------
+
 def main():
 
     sf = sf_login()
+    mongo = mongo_connect()
 
     start = input("Start Date (YYYY-MM-DD): ")
-    end   = input("End Date (YYYY-MM-DD): ")
+    end = input("End Date (YYYY-MM-DD): ")
 
     query = f"""
-    SELECT Id, Title, FileExtension, ContentSize, CreatedDate,
-           CreatedBy.Name,
-           Owner.Name,
-           ContentDocumentId
+    SELECT Id, Title, FileExtension, ContentSize,
+           ContentDocumentId, CreatedDate,
+           CreatedBy.Name
     FROM ContentVersion
     WHERE CreatedDate >= {start}T00:00:00Z
     AND CreatedDate <= {end}T23:59:59Z
     AND ContentSize > {MAX_SIZE}
     """
 
+    print("\n🔍 Query:\n", query)
+
     records = sf.query_all(query)["records"]
-    print(f"\nFound {len(records)} eligible files\n")
+
+    print("📊 Files Found:", len(records))
 
     for r in records:
 
         try:
+
+            print("\n-----------------------------------")
+
             cv_id = r["Id"]
             title = r["Title"]
             ext = r["FileExtension"] or ""
-            content_document_id = r["ContentDocumentId"]
-            owner_name = r["Owner"]["Name"]
+            doc_id = r["ContentDocumentId"]
 
-            # ================= GET LINKED ENTITY =================
-            cdl_query = f"""
-            SELECT LinkedEntityId, LinkedEntity.Type
-            FROM ContentDocumentLink
-            WHERE ContentDocumentId = '{content_document_id}'
-            LIMIT 1
-            """
+            filename = build_filename(title, ext)
 
-            cdl_result = sf.query(cdl_query)
+            local_path = download_file(sf, cv_id, filename)
 
-            if cdl_result["records"]:
-                linked_entity_id = cdl_result["records"][0]["LinkedEntityId"]
-                sobject_type = cdl_result["records"][0]["LinkedEntity"]["Type"]
-            else:
-                linked_entity_id = None
-                sobject_type = None
+            size = os.path.getsize(local_path)
 
-            # ================= FILE NAME =================
-            if ext and not title.lower().endswith(f".{ext.lower()}"):
-                filename = f"{title}.{ext}"
-            else:
-                filename = title
+            checksum = generate_sha1(local_path)
 
-            # ================= DOWNLOAD FILE =================
-            download_url = f"{sf.base_url}sobjects/ContentVersion/{cv_id}/VersionData"
+            linked_id, obj = get_linked_entity(sf, doc_id)
 
-            sf_resp = requests.get(
-                download_url,
-                headers={"Authorization": f"Bearer {sf.session_id}"},
-                timeout=300
-            )
-            sf_resp.raise_for_status()
+            vertical = get_vertical(sf, linked_id, obj)
 
-            file_bytes = sf_resp.content
-            checksum = generate_sha1(file_bytes)
+            agreement_no = get_agreement_number(sf, linked_id, obj)
 
-            print(f"Downloaded → {filename} ({len(file_bytes)} bytes)")
-
-            # ================= DATE FORMAT =================
-            sf_date = r["CreatedDate"]
-            parsed_date = datetime.strptime(sf_date[:10], "%Y-%m-%d")
-            formatted_date = parsed_date.strftime("%d/%m/%Y")
-
-            # ================= DMS METADATA (MATCHING YOUR WORKING PAYLOAD) =================
-            metadata = {
-                "vertical": "Unknown",
-                "user": r["CreatedBy"]["Name"],
-                "uniqueId": cv_id,
-                "status": "1",
-                "stage": "FI",
-                "sourceSys": "Gallop",
-                "size": str(len(file_bytes)),
-                "module": "Notice Letters",
-                "latLong": "242-12344",
-                "keyValue": [title],
-                "keyId": ["agreementNo"],
-                "imageSubCategory": "0",
-                "imageSrcId": "01",
-                "imageSrc": "Gallop",
-                "imageId": content_document_id,  # IMPORTANT
-                "imageCategory": "0",
-                "format": ext.lower(),
-                "fileName": filename,
-                "createdDate": formatted_date,
-                "createdBy": r["CreatedBy"]["Name"],
-                "checkSum": checksum,
-                "branchCode": "1208",
-                "branch": "HO",
-                "appId": None
-            }
-
-            # ================= MULTIPART UPLOAD =================
-            files = {
-                "data": (None, json.dumps(metadata), "application/json"),
-                "image": (
-                    filename,
-                    file_bytes,
-                    mimetypes.guess_type(filename)[0] or "application/octet-stream"
-                )
-            }
-
-            headers = {
-                "Authorization": DMS_AUTH
-            }
-
-            print(f"Uploading → {filename}")
-
-            dms_resp = requests.post(
-                DMS_URL,
-                headers=headers,
-                files=files,
-                timeout=300
+            metadata = DMSRequestWrapper.create_upload_request(
+                r, doc_id, size, checksum, vertical, agreement_no, ext, filename
             )
 
-            print("STATUS:", dms_resp.status_code)
-            print("BODY:", dms_resp.text)
+            res = upload_to_dms(local_path, metadata)
 
-            # Extract DMS values
-            dms_id = dms_resp.text.strip()
-            dms_json = dms_resp.text
+            status = "SuccessToDMS" if res.status_code in [200, 201] else "FailedToDMS"
 
-            # ================= TRACKING =================
-            if dms_resp.status_code in [200, 201]:
-
-                tracking_doc = {
-                    "ContentDocumentId__c": content_document_id,
+            mongo.update_one(
+                {"ContentDocumentId__c": doc_id},
+                {"$set": {
+                    "ContentDocumentId__c": doc_id,
                     "Document_Name__c": filename,
-                    "sObject_Name__c": sobject_type,
-                    "DMS_Id__c": dms_id,   # ✅ NOW CLEAN DMS ID
-                    "DMS_Response__c": dms_json,  # ✅ FULL RESPONSE STORED
-
-                    "Migrate_Status__c": "SuccessToDMS",
-                    "DMS_Url__c": dms_resp.text,
-                    "Push_to_DMS__c": True,
-                    "sObject_Record_Id__c": linked_entity_id,
-                    "IsUploadedToDMS__c": True,
-                    "IsUploaded__c": True,
-                    "Vertical__c": "VF_Gallop",
-                    "Content_File_Owner__c": owner_name,
+                    "Vertical__c": vertical,
+                    "sObject_Name__c": obj,
+                    "sObject_Record_Id__c": linked_id,
+                    "DMS_Response__c": res.text,
+                    "Migrate_Status__c": status,
                     "Checksum__c": checksum,
+                    "File_Size": size,
                     "CreatedDate": datetime.now(timezone.utc)
-                }
-
-            else:
-
-                tracking_doc = {
-                    "ContentDocumentId__c": content_document_id,
-                    "Document_Name__c": filename,
-                    "sObject_Name__c": sobject_type,
-                    "DMSId__c": None,
-                    "Migrate_Status__c": "FailedToDMS",
-                    "DMS_Url__c": None,
-                    "Push_to_DMS__c": False,
-                    "sObject_Record_Id__c": linked_entity_id,
-                    "IsUploadedToDMS__c": False,
-                    "IsUploaded__c": False,
-                    "Vertical__c": "VF_Gallop",
-                    "Content_File_Owner__c": owner_name,
-                    "Checksum__c": checksum,
-                    "Error_Message__c": dms_resp.text,
-                    "CreatedDate": datetime.now(timezone.utc)
-                }
-
-            collection.update_one(
-                {"ContentDocumentId__c": content_document_id},
-                {"$set": tracking_doc},
+                }},
                 upsert=True
             )
 
-            print("-" * 60)
+            print("✅ Mongo Saved | Status:", status)
+
+            if status == "SuccessToDMS":
+                os.remove(local_path)
+                print("🧹 File Deleted")
 
         except Exception as e:
+            print("❌ ERROR:", str(e))
 
-            print("ERROR:", str(e))
+    print("\n🎉 PROCESS COMPLETED")
 
-            collection.update_one(
-                {"ContentDocumentId__c": r.get("ContentDocumentId")},
-                {
-                    "$set": {
-                        "ContentDocumentId__c": r.get("ContentDocumentId"),
-                        "Document_Name__c": r.get("Title"),
-                        "Migrate_Status__c": "Exception",
-                        "Error_Message__c": str(e),
-                        "Push_to_DMS__c": False,
-                        "IsUploadedToDMS__c": False,
-                        "IsUploaded__c": False,
-                        "CreatedDate": datetime.now(timezone.utc)
-                    }
-                },
-                upsert=True
-            )
-
-    print("\n✔ Processing Completed")
-
+# ---------------- RUN ----------------
 
 if __name__ == "__main__":
     main()
