@@ -129,7 +129,7 @@ class DMSRequestWrapper:
             "sourceSys": "Gallop",
             "branchCode": "1208",
             "branch": "HO",
-            "vertical": vertical or "VF",
+            "vertical": vertical or "Unknown",
             "stage": "FI",
             "module": "Notice Letters",
             "imageCategory": "0",
